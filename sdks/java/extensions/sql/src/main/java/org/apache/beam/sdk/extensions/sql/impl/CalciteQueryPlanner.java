@@ -72,7 +72,7 @@ class CalciteQueryPlanner implements QueryPlanner {
 
   private final Planner planner;
 
-  public CalciteQueryPlanner(JdbcConnection connection, RuleSet[] ruleSets) {
+  CalciteQueryPlanner(JdbcConnection connection, RuleSet[] ruleSets) {
     planner = Frameworks.getPlanner(defaultConfig(connection, ruleSets));
   }
 
