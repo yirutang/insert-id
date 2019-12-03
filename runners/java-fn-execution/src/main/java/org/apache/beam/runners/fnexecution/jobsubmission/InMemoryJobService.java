@@ -32,6 +32,7 @@ import org.apache.beam.model.jobmanagement.v1.JobApi.DescribePipelineOptionsResp
 import org.apache.beam.model.jobmanagement.v1.JobApi.GetJobPipelineRequest;
 import org.apache.beam.model.jobmanagement.v1.JobApi.GetJobPipelineResponse;
 import org.apache.beam.model.jobmanagement.v1.JobApi.GetJobStateRequest;
+import org.apache.beam.model.jobmanagement.v1.JobApi.GetJobStateResponse;
 import org.apache.beam.model.jobmanagement.v1.JobApi.GetJobsRequest;
 import org.apache.beam.model.jobmanagement.v1.JobApi.GetJobsResponse;
 import org.apache.beam.model.jobmanagement.v1.JobApi.JobInfo;
@@ -39,7 +40,6 @@ import org.apache.beam.model.jobmanagement.v1.JobApi.JobMessage;
 import org.apache.beam.model.jobmanagement.v1.JobApi.JobMessagesRequest;
 import org.apache.beam.model.jobmanagement.v1.JobApi.JobMessagesResponse;
 import org.apache.beam.model.jobmanagement.v1.JobApi.JobState;
-import org.apache.beam.model.jobmanagement.v1.JobApi.JobStateEvent;
 import org.apache.beam.model.jobmanagement.v1.JobApi.PrepareJobRequest;
 import org.apache.beam.model.jobmanagement.v1.JobApi.PrepareJobResponse;
 import org.apache.beam.model.jobmanagement.v1.JobApi.RunJobRequest;
@@ -190,8 +190,8 @@ public class InMemoryJobService extends JobServiceGrpc.JobServiceImplBase implem
       String invocationId = invocation.getId();
 
       invocation.addStateListener(
-          event -> {
-            if (!JobInvocation.isTerminated(event.getState())) {
+          state -> {
+            if (!JobInvocation.isTerminated(state)) {
               return;
             }
             String stagingSessionToken = stagingSessionTokens.get(preparationId);
@@ -243,12 +243,14 @@ public class InMemoryJobService extends JobServiceGrpc.JobServiceImplBase implem
   }
 
   @Override
-  public void getState(GetJobStateRequest request, StreamObserver<JobStateEvent> responseObserver) {
+  public void getState(
+      GetJobStateRequest request, StreamObserver<GetJobStateResponse> responseObserver) {
     LOG.trace("{} {}", GetJobStateRequest.class.getSimpleName(), request);
     String invocationId = request.getJobId();
     try {
       JobInvocation invocation = getInvocation(invocationId);
-      JobStateEvent response = invocation.getStateEvent();
+      JobState.Enum state = invocation.getState();
+      GetJobStateResponse response = GetJobStateResponse.newBuilder().setState(state).build();
       responseObserver.onNext(response);
       responseObserver.onCompleted();
     } catch (StatusRuntimeException | StatusException e) {
@@ -306,16 +308,15 @@ public class InMemoryJobService extends JobServiceGrpc.JobServiceImplBase implem
 
   @Override
   public void getStateStream(
-      GetJobStateRequest request, StreamObserver<JobStateEvent> responseObserver) {
+      GetJobStateRequest request, StreamObserver<GetJobStateResponse> responseObserver) {
     LOG.trace("{} {}", GetJobStateRequest.class.getSimpleName(), request);
     String invocationId = request.getJobId();
     try {
       JobInvocation invocation = getInvocation(invocationId);
-
-      Consumer<JobStateEvent> stateListener =
-          event -> {
-            responseObserver.onNext(event);
-            if (JobInvocation.isTerminated(event.getState())) {
+      Consumer<JobState.Enum> stateListener =
+          state -> {
+            responseObserver.onNext(GetJobStateResponse.newBuilder().setState(state).build());
+            if (JobInvocation.isTerminated(state)) {
               responseObserver.onCompleted();
             }
           };
@@ -340,11 +341,13 @@ public class InMemoryJobService extends JobServiceGrpc.JobServiceImplBase implem
       // and message listener.
       StreamObserver<JobMessagesResponse> syncResponseObserver =
           SynchronizedStreamObserver.wrapping(responseObserver);
-      Consumer<JobStateEvent> stateListener =
-          event -> {
+      Consumer<JobState.Enum> stateListener =
+          state -> {
             syncResponseObserver.onNext(
-                JobMessagesResponse.newBuilder().setStateResponse(event).build());
-            if (JobInvocation.isTerminated(event.getState())) {
+                JobMessagesResponse.newBuilder()
+                    .setStateResponse(GetJobStateResponse.newBuilder().setState(state).build())
+                    .build());
+            if (JobInvocation.isTerminated(state)) {
               responseObserver.onCompleted();
             }
           };
