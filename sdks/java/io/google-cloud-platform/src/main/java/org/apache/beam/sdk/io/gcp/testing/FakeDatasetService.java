@@ -90,6 +90,13 @@ public class FakeDatasetService implements DatasetService, Serializable {
     }
   }
 
+  public List<String> getAllIds(String projectId, String datasetId, String tableId)
+          throws InterruptedException, IOException {
+    synchronized (tables) {
+      return getTableContainer(projectId, datasetId, tableId).getIds();
+    }
+  }
+
   private TableContainer getTableContainer(String projectId, String datasetId, String tableId)
       throws InterruptedException, IOException {
     synchronized (tables) {
@@ -215,7 +222,7 @@ public class FakeDatasetService implements DatasetService, Serializable {
               PaneInfo.ON_TIME_AND_ONLY_FIRING));
     }
     return insertAll(
-        ref, windowedRows, insertIdList, InsertRetryPolicy.alwaysRetry(), null, null, false, false);
+        ref, windowedRows, insertIdList, InsertRetryPolicy.alwaysRetry(), null, null, false, false, false);
   }
 
   @Override
@@ -227,17 +234,17 @@ public class FakeDatasetService implements DatasetService, Serializable {
       List<ValueInSingleWindow<T>> failedInserts,
       ErrorContainer<T> errorContainer,
       boolean skipInvalidRows,
-      boolean ignoreUnknownValues)
+      boolean ignoreUnknownValues,
+      boolean ignoreInsertIds)
       throws IOException, InterruptedException {
     Map<TableRow, List<TableDataInsertAllResponse.InsertErrors>> insertErrors = getInsertErrors();
     synchronized (tables) {
+      if (ignoreInsertIds) {
+        insertIdList = null;
+      }
+
       if (insertIdList != null) {
         assertEquals(rowList.size(), insertIdList.size());
-      } else {
-        insertIdList = Lists.newArrayListWithExpectedSize(rowList.size());
-        for (int i = 0; i < rowList.size(); ++i) {
-          insertIdList.add(Integer.toString(ThreadLocalRandom.current().nextInt()));
-        }
       }
 
       long dataSize = 0;
@@ -258,7 +265,11 @@ public class FakeDatasetService implements DatasetService, Serializable {
           }
         }
         if (shouldInsert) {
-          dataSize += tableContainer.addRow(row, insertIdList.get(i));
+          if (insertIdList == null) {
+            dataSize += tableContainer.addRow(row, null);
+          } else {
+            dataSize += tableContainer.addRow(row, insertIdList.get(i));
+          }
         } else {
           errorContainer.add(
               failedInserts, allErrors.get(allErrors.size() - 1), ref, rowList.get(i));
