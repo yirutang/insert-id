@@ -36,7 +36,7 @@ httplib2==0.12.0
 mock==2.0.0
 oauth2client==3.0.0
 protobuf==3.9.0
-pyarrow==0.13.0
+pyarrow==0.15.1
 pydot==1.4.1
 pytz==2019.1
 pyvcf==0.6.8;python_version<"3.0"
